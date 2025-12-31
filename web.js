@@ -1,41 +1,59 @@
-require("dotenv").config();
-const express = require("express");
-const axios = require("axios");
-const app = express();
-const PORT = process.env.PORT || 3000;
-
 app.get("/", (req, res) => {
-  res.send(`<h1>SPARX</h1><a href="/login">Login with Discord</a>`);
+  res.send(`
+  <html>
+  <head>
+    <title>SPARX Free Members</title>
+    <style>
+      body {
+        background: linear-gradient(135deg, #ff0066, #5500ff);
+        font-family: Arial, sans-serif;
+        color: white;
+        text-align: center;
+        padding: 80px;
+      }
+      h1 {
+        font-size: 64px;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 4px;
+        text-shadow: 3px 3px #00000050;
+      }
+      h2 {
+        font-size: 28px;
+        opacity: 0.9;
+        margin-bottom: 40px;
+      }
+      .btn {
+        background: #ffffff;
+        color: #000;
+        padding: 18px 40px;
+        font-size: 22px;
+        font-weight: bold;
+        border-radius: 12px;
+        text-decoration: none;
+      }
+      .section {
+        background: #00000050;
+        padding: 20px;
+        width: 60%;
+        margin: 40px auto;
+        border-radius: 12px;
+        font-size: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>SPARX FREE MEMBERS</h1>
+    <h2>Authorize once. Added automatically when /join is used.</h2>
+    <a href="/login" class="btn">🔑 Login With Discord</a>
+
+    <div class="section">
+      <p>• Permanent authorization until revoked.</p>
+      <p>• Bot must be in the server to add members.</p>
+      <p>• Only adds users who agreed to join.</p>
+      <p>• Safe • OAuth Based • Legal</p>
+    </div>
+  </body>
+  </html>
+  `);
 });
-
-app.get("/login", (req, res) => {
-  const url =
-   `https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&response_type=code&scope=identify guilds.join&redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI)}`;
-  res.redirect(url);
-});
-
-app.get("/callback", async (req, res) => {
-  const code = req.query.code;
-  if (!code) return res.send("❌ No code in request");
-
-  const tokenData = new URLSearchParams({
-    client_id: process.env.CLIENT_ID,
-    client_secret: process.env.CLIENT_SECRET,
-    grant_type: "authorization_code",
-    code,
-    redirect_uri: process.env.REDIRECT_URI
-  });
-
-  const tokenRes = await axios.post("https://discord.com/api/oauth2/token", tokenData);
-  const access_token = tokenRes.data.access_token;
-
-  res.send("✔️ Authorized! You can now be added to servers you approve.");
-});
-
-app.listen(PORT, () => {
-  console.log(`🌐 Website running on port ${PORT}`);
-});
-
-// Start bot (same process)
-require("./index.js");
-
