@@ -1,27 +1,18 @@
 require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
-const sqlite3 = require("sqlite3").verbose();
-const path = require("path");
+const { Pool } = require("pg");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.urlencoded({ extended: true }));
-
-// --- SQLite setup ---
-const DB_FILE = path.join(__dirname, "database.sqlite");
-const db = new sqlite3.Database(DB_FILE);
-db.serialize(() => {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS authorized_users (
-      id TEXT PRIMARY KEY,
-      access_token TEXT,
-      refresh_token TEXT,
-      token_expiry INTEGER
-    )
-  `);
+// PostgreSQL connection
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
 });
+
+app.use(express.urlencoded({ extended: true }));
 
 // --- Home Page ---
 app.get("/", (req, res) => {
@@ -47,7 +38,7 @@ app.get("/", (req, res) => {
 
 // --- Login Route ---
 app.get("/login", (req, res) => {
-  const url = `https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&response_type=code&scope=identify%20guilds.join&redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI)}`;
+  const url = `https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&response_type=code&scope=identify%20guilds.join&redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI)}`;
   res.redirect(url);
 });
 
@@ -74,23 +65,29 @@ app.get("/callback", async (req, res) => {
     });
     const userId = userRes.data.id;
 
-    // Save user in SQLite
-    db.run(
+    // Save user in PostgreSQL
+    await pool.query(
+      `CREATE TABLE IF NOT EXISTS authorized_users (
+          id TEXT PRIMARY KEY,
+          access_token TEXT,
+          refresh_token TEXT,
+          token_expiry BIGINT
+      )`
+    );
+
+    await pool.query(
       `INSERT INTO authorized_users (id, access_token, refresh_token, token_expiry)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET
-         access_token=excluded.access_token,
-         refresh_token=excluded.refresh_token,
-         token_expiry=excluded.token_expiry`,
-      [userId, access_token, refresh_token, expiry],
-      function(err) {
-        if (err) console.error("DB Error:", err);
-      }
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (id) DO UPDATE SET
+         access_token = EXCLUDED.access_token,
+         refresh_token = EXCLUDED.refresh_token,
+         token_expiry = EXCLUDED.token_expiry`,
+      [userId, access_token, refresh_token, expiry]
     );
 
     res.send(`<h1>✔️ Authorized!</h1><a href="/">Back to homepage</a>`);
   } catch (err) {
-    console.log(err);
+    console.error(err);
     res.send("❌ Something went wrong during authorization.");
   }
 });
