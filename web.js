@@ -6,6 +6,9 @@ const fs = require("fs");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Parse POST data for dashboard login
+app.use(express.urlencoded({ extended: true }));
+
 // --- Home Page ---
 app.get("/", (req, res) => {
   res.send(`
@@ -43,7 +46,7 @@ app.get("/", (req, res) => {
   `);
 });
 
-// --- Login Route ---
+// --- Login Route (OAuth) ---
 app.get("/login", (req, res) => {
   const url = `https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&response_type=code&scope=identify guilds.join&redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI)}`;
   res.redirect(url);
@@ -62,19 +65,116 @@ app.get("/callback", async (req, res) => {
     redirect_uri: process.env.REDIRECT_URI
   });
 
-  const tokenRes = await axios.post("https://discord.com/api/oauth2/token", tokenData);
-  const access_token = tokenRes.data.access_token;
+  try {
+    const tokenRes = await axios.post("https://discord.com/api/oauth2/token", tokenData);
+    const access_token = tokenRes.data.access_token;
 
-  const userRes = await axios.get("https://discord.com/api/users/@me", {
-    headers: { Authorization: `Bearer ${access_token}` }
-  });
+    const userRes = await axios.get("https://discord.com/api/users/@me", {
+      headers: { Authorization: `Bearer ${access_token}` }
+    });
 
-  const user = { id: userRes.data.id, token: access_token };
-  let db = JSON.parse(fs.readFileSync("authorized.json", "utf-8"));
-  if (!db.find(u => u.id === user.id)) db.push(user);
-  fs.writeFileSync("authorized.json", JSON.stringify(db, null, 2));
+    const user = { id: userRes.data.id, token: access_token };
 
-  res.send("✔️ You are now permanently authorized for Sparx Members!");
+    // Save to authorized.json
+    let db = [];
+    if (fs.existsSync("authorized.json")) {
+      db = JSON.parse(fs.readFileSync("authorized.json", "utf-8"));
+    }
+    if (!db.find(u => u.id === user.id)) db.push(user);
+    fs.writeFileSync("authorized.json", JSON.stringify(db, null, 2));
+
+    res.send(`
+      <h1>✔️ Authorized!</h1>
+      <p>You are now permanently authorized for Sparx Members.</p>
+      <a href="/">Back to homepage</a>
+    `);
+  } catch (e) {
+    console.log(e);
+    res.send("❌ Something went wrong during authorization.");
+  }
+});
+
+// --- Dashboard login page ---
+app.get("/dashboard", (req, res) => {
+  res.send(`
+    <html>
+      <head>
+        <title>Sparx Members Dashboard</title>
+        <style>
+          body {
+            background: linear-gradient(135deg, #ff6a00, #ee0979);
+            font-family: Arial, sans-serif;
+            color: white;
+            text-align: center;
+            padding: 100px 20px;
+          }
+          h1 { font-size: 50px; margin-bottom: 40px; }
+          input[type=password] {
+            padding: 15px;
+            font-size: 20px;
+            border-radius: 10px;
+            border: none;
+            margin-bottom: 20px;
+            width: 300px;
+          }
+          input[type=submit] {
+            padding: 15px 40px;
+            font-size: 20px;
+            border-radius: 10px;
+            border: none;
+            background: #fff;
+            color: #ff6a00;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.3s;
+          }
+          input[type=submit]:hover { background: #ffe6e6; }
+        </style>
+      </head>
+      <body>
+        <h1>SPARX Admin Dashboard</h1>
+        <form method="POST" action="/dashboard">
+          <input type="password" name="password" placeholder="Enter admin password" required />
+          <br/>
+          <input type="submit" value="Enter Dashboard" />
+        </form>
+      </body>
+    </html>
+  `);
+});
+
+// --- Dashboard password check ---
+app.post("/dashboard", (req, res) => {
+  const { password } = req.body;
+  if (password !== "sparxontop") {
+    return res.send("<h1>❌ Wrong password!</h1><a href='/dashboard'>Try again</a>");
+  }
+
+  const users = fs.existsSync("authorized.json") ? JSON.parse(fs.readFileSync("authorized.json", "utf-8")) : [];
+
+  let userList = users.map(u => `<li>${u.id}</li>`).join("");
+  if (!userList) userList = "<li>No users authorized yet.</li>";
+
+  res.send(`
+    <html>
+      <head>
+        <title>SPARX Dashboard</title>
+        <style>
+          body { background: linear-gradient(135deg, #1e3c72, #2a5298, #ff0066); color: white; font-family: Arial, sans-serif; padding: 50px; }
+          h1 { font-size: 50px; text-align: center; margin-bottom: 40px; text-shadow: 3px 3px rgba(0,0,0,0.3); }
+          ul { font-size: 22px; line-height: 2; }
+        </style>
+      </head>
+      <body>
+        <h1>SPARX Members Dashboard</h1>
+        <h2>Authorized Users:</h2>
+        <ul>
+          ${userList}
+        </ul>
+        <p>Total: ${users.length} users</p>
+      </body>
+    </html>
+  `);
 });
 
 // --- Start Server ---
